@@ -1,16 +1,11 @@
 import * as vscode from 'vscode';
 
 export function activate(context: vscode.ExtensionContext) {
-    // THE AUTO-PIN LISTENER
+    // 1. THE AUTO-PIN LISTENER (Existing)
     const pinListener = vscode.window.onDidChangeActiveTextEditor(async (editor) => {
         if (editor && editor.document.uri.scheme === 'isfs') {
-            // 1. First attempt to pin immediately
             await vscode.commands.executeCommand('workbench.action.keepEditor');
-
-            // 2. Second attempt after a tiny delay 
-            // This catches the tab if the server-load "refreshes" it
             setTimeout(async () => {
-                // We check again if the editor is still the same one
                 if (vscode.window.activeTextEditor === editor) {
                     await vscode.commands.executeCommand('workbench.action.keepEditor');
                 }
@@ -18,7 +13,18 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    context.subscriptions.push(pinListener);
+    // 2. THE SHORTCUT COMMAND (New)
+    let shortcutDisposable = vscode.commands.registerCommand('intersystems-utils.targetedOpen', async () => {
+        try {
+            // This calls the native InterSystems search portal
+            await vscode.commands.executeCommand('intersystems.portals.openFile');
+        } catch (error) {
+            // Fallback in case the command ID is slightly different in your version
+            await vscode.commands.executeCommand('intersystems.search');
+        }
+    });
+
+    context.subscriptions.push(pinListener, shortcutDisposable);
 }
 
 export function deactivate() {}
