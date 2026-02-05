@@ -6,23 +6,11 @@
   "engines": {
     "vscode": "^1.108.1"
   },
-  "activationEvents": [],
+  "activationEvents": [
+    "onFileSystem:isfs"
+  ],
   "main": "./out/extension.js",
-  "contributes": {
-    "commands": [
-      {
-        "command": "intersystems-utils.targetedOpen",
-        "title": "Open InterSystems Document..."
-      }
-    ],
-    "keybindings": [
-      {
-        "command": "intersystems-utils.targetedOpen",
-        "key": "ctrl+alt+o",
-        "when": "vscode-objectscript.connectActive"
-      }
-    ]
-  },
+  "contributes": {},
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
