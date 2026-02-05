@@ -1,0 +1,24 @@
+{
+  "name": "workspace-smart-search",
+  "publisher": "alonpe",
+  "displayName": "Workspace Smart Search",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.108.1"
+  },
+  "activationEvents": [
+    "onFileSystem:isfs"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {},
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.108.1",
+    "@types/node": "22.x",
+    "typescript": "^5.9.3"
+  }
+}
