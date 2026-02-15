@@ -10,7 +10,18 @@
     "onFileSystem:isfs"
   ],
   "main": "./out/extension.js",
-  "contributes": {},
+  "contributes": {
+    "commands": {
+      "command": "workspace-smart-search.directGoTo",
+      "title": "InterSystems: Jump to Label^Routine",
+      "category": "InterSystems"
+    },
+    "keybindings": {
+      "command": "workspace-smart-search.directGoTo",
+      "key": "ctrl+alt+g",
+      "when": "vscode-objectscript.connectActive"
+    }
+  },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
