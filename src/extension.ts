@@ -18,11 +18,11 @@ export function activate(context: vscode.ExtensionContext) {
         const folders = vscode.workspace.workspaceFolders?.filter(f => f.uri.scheme === 'isfs');
 
         if (!folders || folders.length === 0) {
-            vscode.window.showErrorMessage("No InterSystems (isfs) folders found in workspace.");
+            vscode.window.showErrorMessage("No InterSystems (isfs) folders found.");
             return;
         }
 
-        // 1. If more than one folder, ask the user to choose
+        // 1. Select Server
         let selectedFolder = folders[0];
         if (folders.length > 1) {
             const picks = folders.map(f => ({
@@ -30,67 +30,69 @@ export function activate(context: vscode.ExtensionContext) {
                 description: f.uri.authority,
                 folder: f
             }));
-            const selection = await vscode.window.showQuickPick(picks, {
-                placeHolder: "Select the server to search in:"
-            });
+            const selection = await vscode.window.showQuickPick(picks, { placeHolder: "Select Server:" });
             if (!selection) return;
             selectedFolder = selection.folder;
         }
 
-        // 2. Ask for the Target
+        // 2. Input
         const input = await vscode.window.showInputBox({
-            prompt: `Search in ${selectedFolder.name} (e.g., Label+Offset^Routine)`,
-            placeHolder: "WEBSCR+12^WBLRSHOWFF"
+            prompt: "Routine^Label or Class.Name",
+            placeHolder: "DOC.Leasing.TIK.Klali or WEBSCR^WBLRSHOWFF"
         });
 
         if (!input) return;
 
-        // 3. Parse Input
-        let label = "";
-        let offset = 0;
-        let routine = "";
+        let rawName = "";
+        let searchTrigger = "";
+
+        // 3. Split Label/Method from Name
         if (input.includes('^')) {
             const parts = input.split('^');
-            routine = parts[1];
-            const labelPart = parts[0];
-            if (labelPart.includes('+')) {
-                label = labelPart.split('+')[0];
-                offset = parseInt(labelPart.split('+')[1]) || 0;
-            } else {
-                label = labelPart;
-            }
+            rawName = parts[1];
+            searchTrigger = parts[0].split('+')[0]; 
+        } else if (input.includes('#')) {
+            const parts = input.split('#');
+            rawName = parts[0];
+            searchTrigger = parts[1];
         } else {
-            routine = input;
+            rawName = input;
         }
 
-        // 4. Try to open the file (.mac then .int)
-        const extensions = ['.mac', '.int'];
-        let doc: vscode.TextDocument | undefined;
+        // 4. THE FIX: Convert Class Dots to Slashes
+        // If it looks like a class (has dots and doesn't end in .mac/.int)
+        let isClass = rawName.includes('.') && !rawName.toLowerCase().endsWith('.mac') && !rawName.toLowerCase().endsWith('.int');
+        let formattedPath = isClass ? rawName.replace(/\./g, '/') : rawName;
 
+        const extensions = isClass ? ['.cls', '.mac', '.int'] : ['.mac', '.int', '.cls'];
+        
+        let doc: vscode.TextDocument | undefined;
         for (const ext of extensions) {
             try {
-                const fullRoutine = routine.includes('.') ? routine : `${routine}${ext}`;
-                const uri = vscode.Uri.parse(`isfs://${selectedFolder.uri.authority}/${fullRoutine}`);
+                const finalPath = formattedPath.endsWith(ext) ? formattedPath : `${formattedPath}${ext}`;
+                const uri = vscode.Uri.parse(`isfs://${selectedFolder.uri.authority}/${finalPath}`);
                 doc = await vscode.workspace.openTextDocument(uri);
                 if (doc) break;
-            } catch (e) { /* continue */ }
+            } catch (e) { /* next */ }
         }
 
         if (!doc) {
-            vscode.window.showErrorMessage(`Could not find routine: ${routine} on ${selectedFolder.name}`);
+            vscode.window.showErrorMessage(`Not found: ${rawName} (Tried: ${formattedPath})`);
             return;
         }
 
-        // 5. Navigate to Label and Offset
+        // 5. Navigate
         const editor = await vscode.window.showTextDocument(doc);
-        if (label) {
+        if (searchTrigger) {
             const text = doc.getText();
             const lines = text.split(/\r?\n/);
-            let labelLineIndex = lines.findIndex(line => line.startsWith(label));
+            
+            // Matches 'Label' at start of line OR 'Method Name' or 'ClassMethod Name'
+            const regex = new RegExp(`^${searchTrigger}\\b|Method\\s+${searchTrigger}\\b`, 'i');
+            let lineIndex = lines.findIndex(line => regex.test(line));
 
-            if (labelLineIndex !== -1) {
-                const finalLine = labelLineIndex + offset;
-                const position = new vscode.Position(finalLine, 0);
+            if (lineIndex !== -1) {
+                const position = new vscode.Position(lineIndex, 0);
                 editor.selection = new vscode.Selection(position, position);
                 editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
             }
