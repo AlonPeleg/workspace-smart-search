@@ -2,7 +2,7 @@
   "name": "workspace-smart-search",
   "publisher": "alonpe",
   "displayName": "Workspace Smart Search",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "engines": {
     "vscode": "^1.108.1"
   },
