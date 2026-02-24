@@ -2,7 +2,7 @@
   "name": "workspace-smart-search",
   "publisher": "alonpe",
   "displayName": "Workspace Smart Search",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "engines": {
     "vscode": "^1.108.1"
   },
@@ -11,16 +11,50 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "commands": {
-      "command": "workspace-smart-search.directGoTo",
-      "title": "InterSystems: Jump to Label^Routine",
-      "category": "InterSystems"
-    },
-    "keybindings": {
-      "command": "workspace-smart-search.directGoTo",
-      "key": "ctrl+alt+g",
-      "when": "vscode-objectscript.connectActive"
-    }
+    "commands": [
+      {
+        "command": "workspace-smart-search.directGoTo",
+        "title": "InterSystems: Jump to Label^Routine",
+        "category": "InterSystems"
+      },
+      {
+        "command": "workspace-smart-search.toggleBookmark",
+        "title": "InterSystems: Toggle Bookmark",
+        "category": "InterSystems"
+      },
+      {
+        "command": "workspace-smart-search.jumpBookmark",
+        "title": "InterSystems: Next Bookmark",
+        "category": "InterSystems"
+      },
+      {
+        "command": "workspace-smart-search.clearBookmarks",
+        "title": "InterSystems: Clear All Bookmarks (File)",
+        "category": "InterSystems"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "workspace-smart-search.directGoTo",
+        "key": "ctrl+alt+g",
+        "when": "vscode-objectscript.connectActive"
+      },
+      {
+        "command": "workspace-smart-search.toggleBookmark",
+        "key": "ctrl+f2",
+        "when": "editorTextFocus && vscode-objectscript.connectActive"
+      },
+      {
+        "command": "workspace-smart-search.jumpBookmark",
+        "key": "f2",
+        "when": "editorTextFocus && vscode-objectscript.connectActive"
+      },
+      {
+        "command": "workspace-smart-search.clearBookmarks",
+        "key": "ctrl+alt+f2",
+        "when": "editorTextFocus && vscode-objectscript.connectActive"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -31,9 +65,5 @@
     "@types/vscode": "^1.108.1",
     "@types/node": "22.x",
     "typescript": "^5.9.3"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/AlonPeleg/workspace-smart-search"
   }
 }
