@@ -2,7 +2,7 @@
   "name": "workspace-smart-search",
   "publisher": "alonpe",
   "displayName": "Workspace Smart Search",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "engines": {
     "vscode": "^1.108.1"
   },
@@ -58,6 +58,11 @@
         "command": "workspace-smart-search.clearFileBookmarks",
         "title": "Clear All in File",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "workspace-smart-search.clearNamespaceBookmarks",
+        "title": "Clear All in Namespace",
+        "icon": "$(trash)"
       }
     ],
     "menus": {
@@ -70,6 +75,11 @@
         {
           "command": "workspace-smart-search.clearFileBookmarks",
           "when": "view == isfsBookmarksView && viewItem == fileItem",
+          "group": "inline"
+        },
+        {
+          "command": "workspace-smart-search.clearNamespaceBookmarks",
+          "when": "view == isfsBookmarksView && viewItem == namespaceItem",
           "group": "inline"
         }
       ]

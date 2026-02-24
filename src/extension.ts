@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 
-// Decoration for the bookmark icon in the gutter
 const bookmarkDecorationType = vscode.window.createTextEditorDecorationType({
     gutterIconPath: vscode.Uri.parse('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBmaWxsPSIjRkZEMDREIiBkPSJNMyAySDEzVjE0TDEwIDExTDcgMTRWMloiLz48L3N2Zz4='),
     gutterIconSize: 'contain',
@@ -9,7 +8,6 @@ const bookmarkDecorationType = vscode.window.createTextEditorDecorationType({
 });
 
 export function activate(context: vscode.ExtensionContext) {
-    // --- BOOKMARK STATE MANAGEMENT ---
     let bookmarks: { [uri: string]: number[] } = context.workspaceState.get('isfsBookmarks', {});
 
     const updateDecorations = (editor: vscode.TextEditor | undefined) => {
@@ -22,46 +20,65 @@ export function activate(context: vscode.ExtensionContext) {
         bookmarkProvider.refresh();
     };
 
-    // --- SIDEBAR TREE VIEW PROVIDER ---
+    // --- UPDATED TREE PROVIDER ---
     class BookmarkProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
         private _onDidChangeTreeData = new vscode.EventEmitter<vscode.TreeItem | undefined | null | void>();
         readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
         refresh(): void { this._onDidChangeTreeData.fire(); }
-
         getTreeItem(element: vscode.TreeItem): vscode.TreeItem { return element; }
 
-        async getChildren(element?: FileItem): Promise<vscode.TreeItem[]> {
-            // If no element, return the list of Files (Folders)
+        async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
+            const uris = Object.keys(bookmarks).filter(u => bookmarks[u].length > 0);
+
+            // 1. Root Level: Namespaces
             if (!element) {
-                const uris = Object.keys(bookmarks).filter(uri => bookmarks[uri].length > 0);
-                return uris.map(uri => new FileItem(uri, bookmarks[uri].length));
-            }
-
-            // If element is a FileItem, return its bookmarks
-            const uriString = element.uri.toString();
-            const fileBookmarks = (bookmarks[uriString] || []).sort((a, b) => a - b);
-            
-            try {
-                const doc = await vscode.workspace.openTextDocument(element.uri);
-                const textLines = doc.getText().split(/\r?\n/);
-
-                return fileBookmarks.map(line => {
-                    let labelName = `Line ${line + 1}`;
-                    for (let i = line; i >= 0; i--) {
-                        const lineText = textLines[i];
-                        const match = lineText.match(/^([%A-Za-z0-9]+)\b/) || lineText.match(/Method\s+([%A-Za-z0-9]+)/i);
-                        if (match) {
-                            const offset = line - i;
-                            labelName = offset === 0 ? match[1] : `${match[1]}+${offset}`;
-                            break;
-                        }
-                    }
-                    return new BookmarkItem(labelName, line, element.uri);
+                const namespaces = [...new Set(uris.map(u => vscode.Uri.parse(u).authority))];
+                return namespaces.map(ns => {
+                    const nsUris = uris.filter(u => vscode.Uri.parse(u).authority === ns);
+                    const totalInNs = nsUris.reduce((sum, u) => sum + bookmarks[u].length, 0);
+                    return new NamespaceItem(ns, totalInNs);
                 });
-            } catch (e) {
-                return [];
             }
+
+            // 2. Middle Level: Files within a Namespace
+            if (element instanceof NamespaceItem) {
+                return uris
+                    .filter(u => vscode.Uri.parse(u).authority === element.label)
+                    .map(u => new FileItem(u, bookmarks[u].length));
+            }
+
+            // 3. Leaf Level: Bookmarks within a File
+            if (element instanceof FileItem) {
+                try {
+                    const doc = await vscode.workspace.openTextDocument(element.uri);
+                    const textLines = doc.getText().split(/\r?\n/);
+                    const fileLines = (bookmarks[element.uri.toString()] || []).sort((a, b) => a - b);
+
+                    return fileLines.map(line => {
+                        let labelName = `Line ${line + 1}`;
+                        for (let i = line; i >= 0; i--) {
+                            const match = textLines[i].match(/^([%A-Za-z0-9]+)\b/) || textLines[i].match(/Method\s+([%A-Za-z0-9]+)/i);
+                            if (match) {
+                                const offset = line - i;
+                                labelName = offset === 0 ? match[1] : `${match[1]}+${offset}`;
+                                break;
+                            }
+                        }
+                        return new BookmarkItem(labelName, line, element.uri);
+                    });
+                } catch (e) { return []; }
+            }
+            return [];
+        }
+    }
+
+    class NamespaceItem extends vscode.TreeItem {
+        constructor(public readonly label: string, count: number) {
+            super(label, vscode.TreeItemCollapsibleState.Expanded);
+            this.iconPath = new vscode.ThemeIcon('server');
+            this.description = `${count} bookmarks`;
+            this.contextValue = 'namespaceItem';
         }
     }
 
@@ -69,13 +86,12 @@ export function activate(context: vscode.ExtensionContext) {
         public readonly uri: vscode.Uri;
         constructor(uriString: string, count: number) {
             const uri = vscode.Uri.parse(uriString);
-            // Display: Namespace - Filename (e.g., pery-test:ACC - WBLRSHOWFF.int)
-            const label = `${uri.authority} - ${uri.path.split('/').pop()}`;
-            super(label, vscode.TreeItemCollapsibleState.Expanded);
+            const fileName = uri.path.split('/').pop() || 'Unknown';
+            super(fileName, vscode.TreeItemCollapsibleState.Collapsed);
             this.uri = uri;
-            this.iconPath = vscode.ThemeIcon.Folder;
+            this.iconPath = vscode.ThemeIcon.File;
             this.description = `${count} bookmarks`;
-            this.contextValue = 'fileItem'; // For the Clear All button
+            this.contextValue = 'fileItem';
         }
     }
 
@@ -96,7 +112,6 @@ export function activate(context: vscode.ExtensionContext) {
     const bookmarkProvider = new BookmarkProvider();
     vscode.window.registerTreeDataProvider('isfsBookmarksView', bookmarkProvider);
 
-    // --- AUTO-PIN LISTENER ---
     const pinListener = vscode.window.onDidChangeActiveTextEditor(async (editor) => {
         if (editor && editor.document.uri.scheme === 'isfs') {
             updateDecorations(editor);
@@ -128,10 +143,16 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    // New Command: Clear bookmarks for a specific file from the sidebar
     vscode.commands.registerCommand('workspace-smart-search.clearFileBookmarks', async (item: FileItem) => {
-        const uri = item.uri.toString();
-        delete bookmarks[uri];
+        delete bookmarks[item.uri.toString()];
+        await context.workspaceState.update('isfsBookmarks', bookmarks);
+        updateDecorations(vscode.window.activeTextEditor);
+    });
+
+    // New: Clear everything in a specific Namespace
+    vscode.commands.registerCommand('workspace-smart-search.clearNamespaceBookmarks', async (item: NamespaceItem) => {
+        const uris = Object.keys(bookmarks).filter(u => vscode.Uri.parse(u).authority === item.label);
+        uris.forEach(u => delete bookmarks[u]);
         await context.workspaceState.update('isfsBookmarks', bookmarks);
         updateDecorations(vscode.window.activeTextEditor);
     });
