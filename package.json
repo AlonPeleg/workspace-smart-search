@@ -2,7 +2,7 @@
   "name": "workspace-smart-search",
   "publisher": "alonpe",
   "displayName": "Workspace Smart Search",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "engines": {
     "vscode": "^1.108.1"
   },
@@ -11,6 +11,23 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "intersystems-tools",
+          "title": "InterSystems Tools",
+          "icon": "$(search-stop)"
+        }
+      ]
+    },
+    "views": {
+      "intersystems-tools": [
+        {
+          "id": "isfsBookmarksView",
+          "name": "Bookmarks"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "workspace-smart-search.directGoTo",
@@ -29,10 +46,24 @@
       },
       {
         "command": "workspace-smart-search.clearBookmarks",
-        "title": "InterSystems: Clear All Bookmarks (File)",
+        "title": "InterSystems: Clear All Bookmarks",
         "category": "InterSystems"
+      },
+      {
+        "command": "workspace-smart-search.deleteSingleBookmark",
+        "title": "Delete Bookmark",
+        "icon": "$(trash)"
       }
     ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "workspace-smart-search.deleteSingleBookmark",
+          "when": "view == isfsBookmarksView",
+          "group": "inline"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "workspace-smart-search.directGoTo",

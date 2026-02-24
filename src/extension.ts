@@ -19,13 +19,67 @@ export function activate(context: vscode.ExtensionContext) {
         editor.setDecorations(bookmarkDecorationType, lines.map(line => ({ 
             range: new vscode.Range(line, 0, line, 0) 
         })));
+        bookmarkProvider.refresh();
     };
 
-    // --- THE AUTO-PIN LISTENER ---
+    // --- SIDEBAR TREE VIEW PROVIDER ---
+    class BookmarkProvider implements vscode.TreeDataProvider<BookmarkItem> {
+        private _onDidChangeTreeData = new vscode.EventEmitter<BookmarkItem | undefined | null | void>();
+        readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+        refresh(): void { this._onDidChangeTreeData.fire(); }
+
+        getTreeItem(element: BookmarkItem): vscode.TreeItem { return element; }
+
+        async getChildren(): Promise<BookmarkItem[]> {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor || editor.document.uri.scheme !== 'isfs') return [];
+            
+            const uri = editor.document.uri.toString();
+            const fileBookmarks = (bookmarks[uri] || []).sort((a, b) => a - b);
+            const textLines = editor.document.getText().split(/\r?\n/);
+
+            return fileBookmarks.map(line => {
+                let labelName = `Line ${line + 1}`;
+                for (let i = line; i >= 0; i--) {
+                    const lineText = textLines[i];
+                    const match = lineText.match(/^([%A-Za-z0-9]+)\b/) || lineText.match(/Method\s+([%A-Za-z0-9]+)/i);
+                    if (match) {
+                        const offset = line - i;
+                        labelName = offset === 0 ? match[1] : `${match[1]}+${offset}`;
+                        break;
+                    }
+                }
+                return new BookmarkItem(labelName, line, editor.document.uri);
+            });
+        }
+    }
+
+    class BookmarkItem extends vscode.TreeItem {
+        constructor(label: string, public readonly line: number, public readonly uri: vscode.Uri) {
+            super(label, vscode.TreeItemCollapsibleState.None);
+            this.description = `line ${line + 1}`;
+            this.iconPath = new vscode.ThemeIcon('bookmark');
+            this.contextValue = 'bookmarkItem';
+            this.command = {
+                command: 'workspace-smart-search.jumpToSpecific',
+                title: 'Jump',
+                arguments: [this]
+            };
+        }
+    }
+
+    const bookmarkProvider = new BookmarkProvider();
+    vscode.window.registerTreeDataProvider('isfsBookmarksView', bookmarkProvider);
+
+    // --- RESTORED: THE AUTO-PIN LISTENER ---
     const pinListener = vscode.window.onDidChangeActiveTextEditor(async (editor) => {
         if (editor && editor.document.uri.scheme === 'isfs') {
             updateDecorations(editor);
+            // First attempt to pin
             await vscode.commands.executeCommand('workbench.action.keepEditor');
+            
+            // Secondary attempt after a short delay to catch "quick clicks" in the explorer
             setTimeout(async () => {
                 if (vscode.window.activeTextEditor === editor) {
                     await vscode.commands.executeCommand('workbench.action.keepEditor');
@@ -34,112 +88,101 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    // --- FEATURE: TOGGLE BOOKMARK (Ctrl+F2) ---
+    // --- COMMANDS ---
+
+    // Jump from Sidebar
+    vscode.commands.registerCommand('workspace-smart-search.jumpToSpecific', (item: BookmarkItem) => {
+        const editor = vscode.window.activeTextEditor;
+        if (editor) {
+            const pos = new vscode.Position(item.line, 0);
+            editor.selection = new vscode.Selection(pos, pos);
+            editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+        }
+    });
+
+    // Delete single from Sidebar
+    vscode.commands.registerCommand('workspace-smart-search.deleteSingleBookmark', async (item: BookmarkItem) => {
+        const uri = item.uri.toString();
+        if (bookmarks[uri]) {
+            bookmarks[uri] = bookmarks[uri].filter(l => l !== item.line);
+            await context.workspaceState.update('isfsBookmarks', bookmarks);
+            updateDecorations(vscode.window.activeTextEditor);
+        }
+    });
+
+    // Toggle Bookmark (Ctrl+F2)
     let toggleBookmark = vscode.commands.registerCommand('workspace-smart-search.toggleBookmark', async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor || editor.document.uri.scheme !== 'isfs') return;
-
         const uri = editor.document.uri.toString();
         const line = editor.selection.active.line;
-        
         if (!bookmarks[uri]) bookmarks[uri] = [];
-        const index = bookmarks[uri].indexOf(line);
-        
-        if (index > -1) {
-            bookmarks[uri].splice(index, 1);
-        } else {
-            bookmarks[uri].push(line);
-        }
-
+        const idx = bookmarks[uri].indexOf(line);
+        idx > -1 ? bookmarks[uri].splice(idx, 1) : bookmarks[uri].push(line);
         await context.workspaceState.update('isfsBookmarks', bookmarks);
         updateDecorations(editor);
     });
 
-    // --- FEATURE: NEXT BOOKMARK (F2) ---
+    // Next Bookmark (F2)
     let jumpBookmark = vscode.commands.registerCommand('workspace-smart-search.jumpBookmark', async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor || editor.document.uri.scheme !== 'isfs') return;
-
         const uri = editor.document.uri.toString();
         const currentLine = editor.selection.active.line;
         const fileBookmarks = (bookmarks[uri] || []).sort((a, b) => a - b);
-
         if (fileBookmarks.length === 0) return;
-
         const next = fileBookmarks.find(l => l > currentLine) ?? fileBookmarks[0];
         const pos = new vscode.Position(next, 0);
         editor.selection = new vscode.Selection(pos, pos);
         editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
     });
 
-    // --- FEATURE: CLEAR ALL BOOKMARKS (Ctrl+Alt+F2) ---
+    // Clear All (Ctrl+Alt+F2)
     let clearBookmarks = vscode.commands.registerCommand('workspace-smart-search.clearBookmarks', async () => {
         const editor = vscode.window.activeTextEditor;
-        if (!editor || editor.document.uri.scheme !== 'isfs') return;
-
-        const uri = editor.document.uri.toString();
-        if (bookmarks[uri]) {
-            delete bookmarks[uri];
+        if (editor && editor.document.uri.scheme === 'isfs') {
+            delete bookmarks[editor.document.uri.toString()];
             await context.workspaceState.update('isfsBookmarks', bookmarks);
             updateDecorations(editor);
             vscode.window.setStatusBarMessage("Bookmarks cleared for this file", 2000);
         }
     });
 
-    // --- THE SMART GO-TO FUNCTION (Ctrl+Alt+G) ---
+    // Smart Jump (Ctrl+Alt+G)
     let smartJump = vscode.commands.registerCommand('workspace-smart-search.directGoTo', async () => {
         const folders = vscode.workspace.workspaceFolders?.filter(f => f.uri.scheme === 'isfs');
-
-        if (!folders || folders.length === 0) {
-            vscode.window.showErrorMessage("No InterSystems (isfs) folders found.");
-            return;
-        }
-
+        if (!folders || folders.length === 0) return;
+        
         let selectedFolder = folders[0];
         if (folders.length > 1) {
-            const picks = folders.map(f => ({
-                label: f.name,
-                description: f.uri.authority,
-                folder: f
-            }));
+            const picks = folders.map(f => ({ label: f.name, description: f.uri.authority, folder: f }));
             const selection = await vscode.window.showQuickPick(picks, { placeHolder: "Select Server:" });
             if (!selection) return;
             selectedFolder = selection.folder;
         }
 
-        const input = await vscode.window.showInputBox({
-            prompt: "Routine^Label or Class.Name",
-            placeHolder: "DOC.Leasing.TIK.Klali or WEBSCR^WBLRSHOWFF"
-        });
-
+        const input = await vscode.window.showInputBox({ prompt: "Routine^Label or Class.Name" });
         if (!input) return;
 
-        let rawName = "";
-        let searchTrigger = "";
-        let lineOffset = 0;
-
+        let rawName = "", searchTrigger = "", lineOffset = 0;
         if (input.includes('^')) {
             const parts = input.split('^');
             rawName = parts[1];
-            const labelPart = parts[0];
-            if (labelPart.includes('+')) {
-                const offsetParts = labelPart.split('+');
-                searchTrigger = offsetParts[0];
-                lineOffset = parseInt(offsetParts[1]) || 0;
-            } else {
-                searchTrigger = labelPart;
-            }
+            const lab = parts[0];
+            if (lab.includes('+')) {
+                const off = lab.split('+');
+                searchTrigger = off[0];
+                lineOffset = parseInt(off[1]) || 0;
+            } else { searchTrigger = lab; }
         } else if (input.includes('#')) {
             const parts = input.split('#');
             rawName = parts[0];
             const methodPart = parts[1];
             if (methodPart.includes('+')) {
-                const offsetParts = methodPart.split('+');
-                searchTrigger = offsetParts[0];
-                lineOffset = parseInt(offsetParts[1]) || 0;
-            } else {
-                searchTrigger = methodPart;
-            }
+                const off = methodPart.split('+');
+                searchTrigger = off[0];
+                lineOffset = parseInt(off[1]) || 0;
+            } else { searchTrigger = methodPart; }
         } else {
             rawName = input;
         }
@@ -148,38 +191,28 @@ export function activate(context: vscode.ExtensionContext) {
         let formattedPath = isClass ? rawName.replace(/\./g, '/') : rawName;
         const extensions = isClass ? ['.cls', '.mac', '.int'] : ['.mac', '.int', '.cls'];
         
-        let doc: vscode.TextDocument | undefined;
         for (const ext of extensions) {
             try {
                 const finalPath = formattedPath.endsWith(ext) ? formattedPath : `${formattedPath}${ext}`;
                 const uri = vscode.Uri.parse(`isfs://${selectedFolder.uri.authority}/${finalPath}`);
-                doc = await vscode.workspace.openTextDocument(uri);
-                if (doc) break;
+                const doc = await vscode.workspace.openTextDocument(uri);
+                const editor = await vscode.window.showTextDocument(doc);
+                if (searchTrigger) {
+                    const lines = doc.getText().split(/\r?\n/);
+                    const regex = new RegExp(`^${searchTrigger}\\b|Method\\s+${searchTrigger}\\b`, 'i');
+                    let idx = lines.findIndex(l => regex.test(l));
+                    if (idx !== -1) {
+                        const pos = new vscode.Position(idx + lineOffset, 0);
+                        editor.selection = new vscode.Selection(pos, pos);
+                        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+                    }
+                }
+                break;
             } catch (e) { }
-        }
-
-        if (!doc) {
-            vscode.window.showErrorMessage(`Not found: ${rawName}`);
-            return;
-        }
-
-        const editor = await vscode.window.showTextDocument(doc);
-        if (searchTrigger) {
-            const text = doc.getText();
-            const lines = text.split(/\r?\n/);
-            const regex = new RegExp(`^${searchTrigger}\\b|Method\\s+${searchTrigger}\\b`, 'i');
-            let lineIndex = lines.findIndex(line => regex.test(line));
-
-            if (lineIndex !== -1) {
-                const finalLine = lineIndex + lineOffset;
-                const position = new vscode.Position(finalLine, 0);
-                editor.selection = new vscode.Selection(position, position);
-                editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
-            }
         }
     });
 
-    context.subscriptions.push(pinListener, smartJump, toggleBookmark, jumpBookmark, clearBookmarks);
+    context.subscriptions.push(pinListener, toggleBookmark, jumpBookmark, clearBookmarks, smartJump);
 }
 
 export function deactivate() {}
